@@ -1,0 +1,49 @@
+#ifndef CONFIG_H
+#define CONFIG_H
+
+#include <FastLED.h>
+#include <WiFi.h>
+#include <WebServer.h>
+#include <Arduino.h>
+
+// WiFi配置
+const char* ssid = "基沃托斯";
+const char* password = "1111111q";
+
+// IP地址配置
+IPAddress local_IP(192, 168, 31, 100);
+IPAddress gateway(192, 168, 31, 1);
+IPAddress subnet(255, 255, 255, 0);
+
+// 灯环配置
+#define MAIN_LED_PIN     19
+#define MAIN_NUM_LEDS    60
+#define RING_LED_PIN     18
+#define RING_NUM_LEDS    16
+
+#define CHIPSET     WS2812B
+#define COLOR_ORDER GRB
+
+// 传感器引脚
+#define MOTION_SENSOR_PIN 15
+#define BOARD_LED_PIN     2
+
+// 效果参数
+const uint16_t BREATHE_STEPS = 120;
+const uint16_t BREATHE_DURATION_MS = 750;
+const uint16_t FADE_IN_MS = 1000;
+const uint16_t FADE_OUT_MS = 1000;
+const long NORMAL_UPDATE_INTERVAL = 30;
+
+// 状态定义
+enum SystemState {
+  STATE_BREATHE_LOOP,
+  STATE_OFF,
+  STATE_BREATHE,
+  STATE_FADE_IN,
+  STATE_NORMAL,
+  STATE_FADE_OUT,
+  STATE_MANUAL
+};
+
+#endif

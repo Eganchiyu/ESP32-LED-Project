@@ -1,0 +1,398 @@
+#include <HardwareSerial.h>
+
+// 定义HLK-LD2402通信参数
+HardwareSerial LD2402(1); // 使用UART1
+const int LD2402_RX_PIN = 16;
+const int LD2402_TX_PIN = 17;
+const unsigned long BAUDRATE = 115200;
+
+// 协议帧定义
+const uint8_t FRAME_HEADER[4] = {0xFD, 0xFC, 0xFB, 0xFA};
+const uint8_t FRAME_TAIL[4] = {0x04, 0x03, 0x02, 0x01};
+
+// 门限值计算函数
+// dB值转换为参数值公式: M = 10^(N/10)，其中N为dB值
+uint32_t dbToParamValue(float db) {
+  return (uint32_t)powf(10.0f, db / 10.0f);
+}
+
+// 参数值转换为dB值
+float paramValueToDb(uint32_t value) {
+  if (value == 0) return 0;
+  return 10.0f * log10f((float)value);
+}
+
+// 命令定义
+const uint8_t CMD_ENABLE_CONFIG[14] = {0xFD, 0xFC, 0xFB, 0xFA, 0x04, 0x00, 0xFF, 0x00, 0x01, 0x00, 0x04, 0x03, 0x02, 0x01};
+const uint8_t CMD_SAVE_PARAMS[14] = {0xFD, 0xFC, 0xFB, 0xFA, 0x02, 0x00, 0xFD, 0x00, 0x04, 0x03, 0x02, 0x01};
+const uint8_t CMD_EXIT_CONFIG[14] = {0xFD, 0xFC, 0xFB, 0xFA, 0x02, 0x00, 0xFE, 0x00, 0x04, 0x03, 0x02, 0x01};
+
+// 函数声明
+bool sendCommandAndCheck(const uint8_t* command, int cmdLength);
+bool setThreshold(uint8_t param_id, uint32_t value);
+bool setDisappearDelay(uint16_t delaySeconds);
+bool readThreshold(uint8_t param_id, uint32_t* value);
+bool readDisappearDelay(uint16_t* delaySeconds);
+void printHexData(const uint8_t* data, int length);
+void uint32ToBytes(uint32_t value, uint8_t* bytes);
+
+void setup() {
+  Serial.begin(115200);
+  LD2402.begin(BAUDRATE, SERIAL_8N1, LD2402_RX_PIN, LD2402_TX_PIN);
+  
+  // 🎯 在这里修改目标参数值 🎯
+  float targetTriggerDb = 44.0f;    // 触发门限 (dB) - 修改这个值
+  float targetMicroDb = 40.0f;      // 微动门限 (dB) - 修改这个值  
+  uint16_t targetDelaySeconds = 2; // 目标消失延迟 (秒) - 修改这个值
+  
+  Serial.println("HLK-LD2402 参数配置开始...");
+  Serial.printf("目标配置：\n");
+  Serial.printf("  - 触发门限: %.1fdB\n", targetTriggerDb);
+  Serial.printf("  - 微动门限: %.1fdB\n", targetMicroDb);
+  Serial.printf("  - 目标消失延迟: %d秒\n", targetDelaySeconds);
+  Serial.println("================================");
+  
+  delay(2000); // 等待模块启动
+  
+  // 步骤1: 进入配置模式
+  Serial.println("1. 进入配置模式...");
+  if (!sendCommandAndCheck(CMD_ENABLE_CONFIG, sizeof(CMD_ENABLE_CONFIG))) {
+    Serial.println("❌ 进入配置模式失败！停止执行");
+    return;
+  }
+  Serial.println("✅ 进入配置模式成功");
+  
+  // 步骤2: 读取当前设置
+  Serial.println("2. 读取当前设置...");
+  uint32_t currentValue;
+  uint16_t currentDelay;
+  
+  // 读取当前触发门限0
+  if (readThreshold(0x10, &currentValue)) {
+    Serial.printf("当前触发门限0: %.2fdB\n", paramValueToDb(currentValue));
+  }
+  
+  // 读取当前微动门限0
+  if (readThreshold(0x30, &currentValue)) {
+    Serial.printf("当前微动门限0: %.2fdB\n", paramValueToDb(currentValue));
+  }
+  
+  // 读取当前消失延迟
+  if (readDisappearDelay(&currentDelay)) {
+    Serial.printf("当前目标消失延迟: %d秒\n", currentDelay);
+  }
+  
+  // 步骤3: 配置所有触发门限
+  Serial.printf("3. 配置触发门限到%.1fdB...\n", targetTriggerDb);
+  uint32_t triggerThreshold = dbToParamValue(targetTriggerDb);
+  bool allSuccess = true;
+  
+  for (int i = 0; i < 16; i++) {
+    uint8_t param_id = 0x10 + i; // 0x0010 ~ 0x001F
+    if (!setThreshold(param_id, triggerThreshold)) {
+      Serial.printf("❌ 配置触发门限%d失败！\n", i);
+      allSuccess = false;
+      break;
+    }
+    Serial.printf("✅ 触发门限%d -> %.1fdB\n", i, targetTriggerDb);
+    delay(50);
+  }
+  
+  if (!allSuccess) return;
+  
+  // 步骤4: 配置所有微动门限
+  Serial.printf("4. 配置微动门限到%.1fdB...\n", targetMicroDb);
+  uint32_t microThreshold = dbToParamValue(targetMicroDb);
+  
+  for (int i = 0; i < 16; i++) {
+    uint8_t param_id = 0x30 + i; // 0x0030 ~ 0x003F
+    if (!setThreshold(param_id, microThreshold)) {
+      Serial.printf("❌ 配置微动门限%d失败！\n", i);
+      allSuccess = false;
+      break;
+    }
+    Serial.printf("✅ 微动门限%d -> %.1fdB\n", i, targetMicroDb);
+    delay(50);
+  }
+  
+  if (!allSuccess) return;
+  
+  // 步骤5: 配置目标消失延迟
+  Serial.printf("5. 配置目标消失延迟为%d秒...\n", targetDelaySeconds);
+  if (!setDisappearDelay(targetDelaySeconds)) {
+    Serial.println("❌ 配置目标消失延迟失败！");
+    return;
+  }
+  Serial.printf("✅ 目标消失延迟 -> %d秒\n", targetDelaySeconds);
+  
+  // 步骤6: 读取并验证设置
+  Serial.println("6. 读取并验证设置...");
+  
+  // 验证触发门限
+  if (readThreshold(0x10, &currentValue)) {
+    float dbValue = paramValueToDb(currentValue);
+    Serial.printf("验证触发门限0: %.2fdB %s\n", dbValue, 
+                 (fabs(dbValue - targetTriggerDb) < 1.0f) ? "✅" : "❌");
+  }
+  
+  // 验证微动门限
+  if (readThreshold(0x30, &currentValue)) {
+    float dbValue = paramValueToDb(currentValue);
+    Serial.printf("验证微动门限0: %.2fdB %s\n", dbValue,
+                 (fabs(dbValue - targetMicroDb) < 1.0f) ? "✅" : "❌");
+  }
+  
+  // 验证消失延迟
+  if (readDisappearDelay(&currentDelay)) {
+    Serial.printf("验证目标消失延迟: %d秒 %s\n", currentDelay,
+                 (currentDelay == targetDelaySeconds) ? "✅" : "❌");
+  }
+  
+  // 步骤7: 保存参数
+  Serial.println("7. 保存参数...");
+  if (!sendCommandAndCheck(CMD_SAVE_PARAMS, sizeof(CMD_SAVE_PARAMS))) {
+    Serial.println("❌ 参数保存失败！");
+    return;
+  }
+  Serial.println("✅ 参数保存成功");
+  
+  // 步骤8: 退出配置模式
+  Serial.println("8. 退出配置模式...");
+  if (!sendCommandAndCheck(CMD_EXIT_CONFIG, sizeof(CMD_EXIT_CONFIG))) {
+    Serial.println("❌ 退出配置模式失败！");
+    return;
+  }
+  Serial.println("✅ 退出配置模式成功");
+  
+  Serial.println("================================");
+  Serial.println("🎉 所有参数配置完成！");
+  Serial.printf("模块将应用新设置：\n");
+  Serial.printf("  - 触发门限: %.1fdB\n", targetTriggerDb);
+  Serial.printf("  - 微动门限: %.1fdB\n", targetMicroDb);
+  Serial.printf("  - 目标消失延迟: %d秒\n", targetDelaySeconds);
+}
+
+void loop() {
+  // 主循环不执行任何操作
+  delay(1000);
+}
+
+// 发送命令并检查响应
+bool sendCommandAndCheck(const uint8_t* command, int cmdLength) {
+  // 清空接收缓冲区
+  while (LD2402.available()) {
+    LD2402.read();
+  }
+  
+  // 发送命令
+  Serial.print("发送命令: ");
+  printHexData(command, cmdLength);
+  
+  LD2402.write(command, cmdLength);
+  LD2402.flush();
+  
+  // 等待并读取响应
+  delay(100);
+  uint8_t response[30];
+  int bytesRead = 0;
+  unsigned long startTime = millis();
+  
+  while (millis() - startTime < 1000 && bytesRead < 30) {
+    if (LD2402.available()) {
+      response[bytesRead] = LD2402.read();
+      bytesRead++;
+    }
+  }
+  
+  // 检查响应是否有效
+  if (bytesRead >= 10) {
+    Serial.print("收到响应: ");
+    printHexData(response, bytesRead);
+    
+    // 查找帧头位置
+    int headerPos = -1;
+    for (int i = 0; i <= bytesRead - 4; i++) {
+      if (memcmp(response + i, FRAME_HEADER, 4) == 0) {
+        headerPos = i;
+        break;
+      }
+    }
+    
+    if (headerPos >= 0) {
+      // 状态码在帧头后的第8和第9字节（小端格式）
+      int statusPos = headerPos + 8;
+      if (statusPos + 1 < bytesRead) {
+        uint16_t status = (response[statusPos + 1] << 8) | response[statusPos];
+        if (status == 0x0000) {
+          Serial.println("✅ 命令执行成功");
+          return true;
+        } else {
+          Serial.printf("❌ 命令执行失败，状态码: 0x%04X\n", status);
+        }
+      }
+    } else {
+      Serial.println("❌ 响应帧格式错误，未找到帧头");
+    }
+  } else {
+    Serial.println("❌ 未收到有效响应或响应超时");
+  }
+  
+  return false;
+}
+
+// 设置单个门限参数
+bool setThreshold(uint8_t param_id, uint32_t value) {
+  uint8_t valueBytes[4];
+  uint32ToBytes(value, valueBytes);
+  
+  uint8_t command[18] = {
+    0xFD, 0xFC, 0xFB, 0xFA, // 帧头
+    0x08, 0x00,             // 数据长度 (8字节)
+    0x07, 0x00,             // 命令字 (0x0007 - 配置参数)
+    param_id, 0x00,         // 参数ID
+    valueBytes[0], valueBytes[1], valueBytes[2], valueBytes[3], // 参数值
+    0x04, 0x03, 0x02, 0x01  // 帧尾
+  };
+  
+  return sendCommandAndCheck(command, sizeof(command));
+}
+
+// 设置目标消失延迟
+bool setDisappearDelay(uint16_t delaySeconds) {
+  uint8_t delayBytes[4] = {
+    (uint8_t)(delaySeconds & 0xFF),
+    (uint8_t)((delaySeconds >> 8) & 0xFF),
+    0x00, 0x00
+  };
+  
+  uint8_t command[18] = {
+    0xFD, 0xFC, 0xFB, 0xFA, // 帧头
+    0x08, 0x00,             // 数据长度 (8字节)
+    0x07, 0x00,             // 命令字 (0x0007 - 配置参数)
+    0x04, 0x00,             // 参数ID (0x0004 - 目标消失延迟)
+    delayBytes[0], delayBytes[1], delayBytes[2], delayBytes[3], // 参数值
+    0x04, 0x03, 0x02, 0x01  // 帧尾
+  };
+  
+  return sendCommandAndCheck(command, sizeof(command));
+}
+
+// 读取门限参数
+bool readThreshold(uint8_t param_id, uint32_t* value) {
+  uint8_t read_cmd[14] = {
+    0xFD, 0xFC, 0xFB, 0xFA, 0x04, 0x00, 0x08, 0x00, 
+    param_id, 0x00, 0x04, 0x03, 0x02, 0x01
+  };
+  
+  // 清空接收缓冲区
+  while (LD2402.available()) {
+    LD2402.read();
+  }
+  
+  // 发送读取命令
+  LD2402.write(read_cmd, sizeof(read_cmd));
+  LD2402.flush();
+  
+  // 等待并读取响应
+  delay(100);
+  uint8_t response[30];
+  int bytesRead = 0;
+  unsigned long startTime = millis();
+  
+  while (millis() - startTime < 1000 && bytesRead < 30) {
+    if (LD2402.available()) {
+      response[bytesRead] = LD2402.read();
+      bytesRead++;
+    }
+  }
+  
+  // 解析响应
+  if (bytesRead >= 14) {
+    // 查找帧头位置
+    int headerPos = -1;
+    for (int i = 0; i <= bytesRead - 4; i++) {
+      if (memcmp(response + i, FRAME_HEADER, 4) == 0) {
+        headerPos = i;
+        break;
+      }
+    }
+    
+    if (headerPos >= 0 && headerPos + 13 < bytesRead) {
+      // 参数值在帧头后的第10-13字节（小端格式）
+      *value = (uint32_t)response[headerPos + 10] |
+               ((uint32_t)response[headerPos + 11] << 8) |
+               ((uint32_t)response[headerPos + 12] << 16) |
+               ((uint32_t)response[headerPos + 13] << 24);
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+// 读取目标消失延迟
+bool readDisappearDelay(uint16_t* delaySeconds) {
+  uint8_t read_cmd[14] = {
+    0xFD, 0xFC, 0xFB, 0xFA, 0x04, 0x00, 0x08, 0x00, 
+    0x04, 0x00, 0x04, 0x03, 0x02, 0x01
+  };
+  
+  // 清空接收缓冲区
+  while (LD2402.available()) {
+    LD2402.read();
+  }
+  
+  // 发送读取命令
+  LD2402.write(read_cmd, sizeof(read_cmd));
+  LD2402.flush();
+  
+  // 等待并读取响应
+  delay(100);
+  uint8_t response[30];
+  int bytesRead = 0;
+  unsigned long startTime = millis();
+  
+  while (millis() - startTime < 1000 && bytesRead < 30) {
+    if (LD2402.available()) {
+      response[bytesRead] = LD2402.read();
+      bytesRead++;
+    }
+  }
+  
+  // 解析响应
+  if (bytesRead >= 14) {
+    // 查找帧头位置
+    int headerPos = -1;
+    for (int i = 0; i <= bytesRead - 4; i++) {
+      if (memcmp(response + i, FRAME_HEADER, 4) == 0) {
+        headerPos = i;
+        break;
+      }
+    }
+    
+    if (headerPos >= 0 && headerPos + 11 < bytesRead) {
+      // 参数值在帧头后的第10-11字节（小端格式）
+      *delaySeconds = (uint16_t)response[headerPos + 10] |
+                     ((uint16_t)response[headerPos + 11] << 8);
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+// 打印十六进制数据（用于调试）
+void printHexData(const uint8_t* data, int length) {
+  for (int i = 0; i < length; i++) {
+    Serial.printf("%02X ", data[i]);
+  }
+  Serial.println();
+}
+
+// 将32位整数转换为小端字节序列
+void uint32ToBytes(uint32_t value, uint8_t* bytes) {
+  bytes[0] = (uint8_t)(value & 0xFF);
+  bytes[1] = (uint8_t)((value >> 8) & 0xFF);
+  bytes[2] = (uint8_t)((value >> 16) & 0xFF);
+  bytes[3] = (uint8_t)((value >> 24) & 0xFF);
+}

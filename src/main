@@ -1,0 +1,56 @@
+#include <Arduino.h>
+
+// 定义引脚
+const int PIR_PIN = 4;     // 人体检测模块的信号引脚
+const int LED_PIN = 2;     // 板载LED，用于视觉反馈
+
+// 变量声明
+bool lastMotionState = false;
+bool currentMotionState = false;
+unsigned long lastMotionTime = 0;
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(PIR_PIN, INPUT);
+  pinMode(LED_PIN, OUTPUT);
+  
+  Serial.println("====================================");
+  Serial.println("人体检测模块测试程序启动");
+  Serial.println("等待模块初始化（30-60秒）...");
+  
+  // 人体检测模块需要30-60秒的初始化时间
+  delay(1000); // 等待30秒
+  Serial.println("模块初始化完成，开始检测...");
+  Serial.println("====================================");
+  
+}
+
+void loop() {
+  // 读取人体检测模块状态
+  currentMotionState = digitalRead(PIR_PIN);
+  
+  // 检测到状态变化
+  if (currentMotionState != lastMotionState) {
+    lastMotionState = currentMotionState;
+    lastMotionTime = millis();
+    
+    if (currentMotionState) {
+      Serial.println("🚶 检测到人体移动！");
+      digitalWrite(LED_PIN, HIGH); // 点亮LED
+    } else {
+      Serial.println("💤 无人体移动");
+      //digitalWrite(LED_PIN, LOW);  // 熄灭LED
+    }
+  }
+   
+  // 如果检测到移动，持续显示移动状态
+  if (currentMotionState) {
+    unsigned long currentTime = millis();
+    if (currentTime - lastMotionTime > 1000) { // 每秒更新一次
+      Serial.println("📍 人体仍在检测范围内");
+      lastMotionTime = currentTime;
+    }
+  }
+  
+  delay(100); // 短暂延迟，减少CPU占用
+}

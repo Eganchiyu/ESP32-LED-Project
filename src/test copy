@@ -1,0 +1,49 @@
+#include <Arduino.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <WiFiClientSecure.h>
+#include <ArduinoJson.h>
+
+const char* ssid = "基沃托斯";
+const char* password = "1111111q";
+const char* apiKey = "sk-cb3c01984f144dfba8ef44c13930329d";
+
+WiFiClientSecure client;
+void testDeepSeekAPI() {
+  HTTPClient http;
+  // 尝试HTTP（如果服务器支持）
+  http.begin("http://api.deepseek.com/v1/chat/completions");
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("Authorization", String("Bearer ") + apiKey);
+
+  String requestBody = "{\"model\":\"deepseek-chat\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}],\"max_tokens\":50}";
+  
+  int httpCode = http.POST(requestBody);
+  Serial.println("HTTP状态码: " + String(httpCode));
+  
+  if(httpCode > 0) {
+    String response = http.getString();
+    Serial.println("HTTP响应: " + response);
+  }
+  http.end();
+}
+void setup() {
+  Serial.begin(115200);
+  client.setInsecure();
+  
+  WiFi.begin(ssid, password);
+  while(WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWiFi连接成功");
+  
+  testDeepSeekAPI();
+}
+
+
+
+void loop() {
+  delay(30000); // 30秒后重试
+  testDeepSeekAPI();
+}

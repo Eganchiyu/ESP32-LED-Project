@@ -1,0 +1,298 @@
+#include <FastLED.h>
+
+// 灯环配置
+#define MAIN_LED_PIN     19
+#define MAIN_NUM_LEDS    60
+#define RING_LED_PIN     18
+#define RING_NUM_LEDS    16
+
+#define CHIPSET     WS2812B
+#define COLOR_ORDER GRB
+
+CRGB mainLeds[MAIN_NUM_LEDS];
+CRGB ringLeds[RING_NUM_LEDS];
+
+// 人体传感器引脚
+#define MOTION_SENSOR_PIN 15
+const int BOARD_LED_PIN = 2;
+
+// 状态定义
+enum SystemState {
+  STATE_OFF,
+  STATE_WAVE_IN,
+  STATE_NORMAL,
+  STATE_FADE_OUT
+};
+
+SystemState currentState = STATE_OFF;
+
+// 变量声明
+bool lastMotionState = false;
+bool currentMotionState = false;
+unsigned long lastMotionTime = 0;
+
+// 效果参数
+const uint16_t WAVE_IN_DURATION = 1800;
+const uint16_t FADE_OUT_DURATION = 1200;
+const uint8_t TARGET_BRIGHTNESS = 70;
+
+// 非阻塞延迟变量
+unsigned long previousMillis = 0;
+const long UPDATE_INTERVAL = 35;
+
+// 色彩模式
+uint8_t colorMode = 0;
+unsigned long lastModeChange = 0;
+const long MODE_CHANGE_INTERVAL = 20000; // 20秒切换模式
+
+// 效果变量
+uint8_t hue = 0;
+uint8_t pulseValue = 0;
+uint8_t wavePosition = 0;
+CRGBPalette16 currentPalette;
+uint8_t paletteIndex = 0;
+
+// 预定义色盘
+DEFINE_GRADIENT_PALETTE( sunset_gp ) {
+    0, 120,  0,  0,   // 深红
+   80, 200, 50,  0,   // 橙红
+  160, 255, 150, 0,   // 金色
+  255, 255, 200, 50   // 暖黄
+};
+
+DEFINE_GRADIENT_PALETTE( ocean_gp ) {
+    0,  0,  0, 80,    // 深蓝
+   80,  0, 80, 150,   // 蓝色
+  160,  0, 150, 200,  // 浅蓝
+  255, 100, 200, 255  // 青蓝
+};
+
+DEFINE_GRADIENT_PALETTE( forest_gp ) {
+    0,  0, 30,  0,    // 深绿
+   80,  0, 80, 20,    // 绿色
+  160, 80, 150, 30,   // 黄绿
+  255, 150, 200, 50   // 浅绿
+};
+
+DEFINE_GRADIENT_PALETTE( lavender_gp ) {
+    0,  30,  0, 50,   // 深紫
+   80,  80, 30, 120,  // 紫色
+  160, 150, 80, 180,  // 紫红
+  255, 200, 150, 220  // 淡紫
+};
+
+CRGBPalette16 palettes[] = {
+  sunset_gp,
+  ocean_gp, 
+  forest_gp,
+  lavender_gp
+};
+const uint8_t PALETTE_COUNT = 4;
+
+// 信号稳定性增强
+void stableShow() {
+  delayMicroseconds(50);
+  FastLED.show();
+  delayMicroseconds(50);
+}
+
+// 淡出效果
+bool fadeOut() {
+  static uint32_t startTime = 0;
+  static uint8_t startBrightness = 0;
+  
+  if (startTime == 0) {
+    startTime = millis();
+    startBrightness = FastLED.getBrightness();
+  }
+  
+  uint32_t elapsedTime = millis() - startTime;
+  if (elapsedTime >= FADE_OUT_DURATION) {
+    FastLED.setBrightness(0);
+    stableShow();
+    startTime = 0;
+    return true;
+  }
+  
+  uint8_t brightness = startBrightness * (FADE_OUT_DURATION - elapsedTime) / FADE_OUT_DURATION;
+  FastLED.setBrightness(brightness);
+  stableShow();
+  return false;
+}
+
+// 波浪式淡入
+bool waveIn() {
+  static uint32_t startTime = 0;
+  
+  if (startTime == 0) {
+    startTime = millis();
+    FastLED.clear();
+    // 随机选择一个色盘
+    colorMode = random8(PALETTE_COUNT);
+    currentPalette = palettes[colorMode];
+  }
+  
+  uint32_t elapsedTime = millis() - startTime;
+  if (elapsedTime >= WAVE_IN_DURATION) {
+    FastLED.setBrightness(TARGET_BRIGHTNESS);
+    stableShow();
+    startTime = 0;
+    return true;
+  }
+  
+  uint8_t brightness = TARGET_BRIGHTNESS * elapsedTime / WAVE_IN_DURATION;
+  FastLED.setBrightness(brightness);
+  
+  // 波浪效果
+  wavePosition = (elapsedTime * 256) / WAVE_IN_DURATION;
+  for (int i = 0; i < MAIN_NUM_LEDS; i++) {
+    // 计算每个LED的位置在波浪中的相位
+    uint8_t wave = sin8((i * 10) + wavePosition);
+    mainLeds[i] = ColorFromPalette(currentPalette, wave, brightness, LINEARBLEND);
+  }
+  
+  // 环形灯同步
+  for (int i = 0; i < RING_NUM_LEDS; i++) {
+    uint8_t wave = sin8((i * 20) + wavePosition);
+    ringLeds[i] = ColorFromPalette(currentPalette, wave + 128, brightness, LINEARBLEND);
+  }
+  
+  stableShow();
+  return false;
+}
+
+// 更新主灯效果
+void updateMainEffect() {
+  unsigned long currentMillis = millis();
+  
+  // 定期切换色彩模式
+  if (currentMillis - lastModeChange > MODE_CHANGE_INTERVAL) {
+    colorMode = (colorMode + 1) % PALETTE_COUNT;
+    currentPalette = palettes[colorMode];
+    lastModeChange = currentMillis;
+    
+    Serial.print("🎨 切换色彩模式: ");
+    Serial.println(colorMode);
+  }
+  
+  // 缓慢移动的色盘索引
+  paletteIndex += 1;
+  
+  // 主灯环效果 - 缓慢流动的色彩
+  for (int i = 0; i < MAIN_NUM_LEDS; i++) {
+    // 每个LED在色盘上有轻微偏移，创造流动感
+    uint8_t colorIndex = paletteIndex + (i * 3);
+    mainLeds[i] = ColorFromPalette(currentPalette, colorIndex, TARGET_BRIGHTNESS, LINEARBLEND);
+  }
+}
+
+// 更新环形灯效果
+void updateRingEffect() {
+  // 环形灯呼吸效果，与主灯色彩协调但不同步
+  uint8_t breath = (sin8(millis()/25) + 255) / 2;
+  
+  for (int i = 0; i < RING_NUM_LEDS; i++) {
+    // 使用与主灯相同色盘但不同区域
+    uint8_t colorIndex = paletteIndex + 128 + (i * 10);
+    uint8_t ledBrightness = scale8(breath, TARGET_BRIGHTNESS);
+    ringLeds[i] = ColorFromPalette(currentPalette, colorIndex, ledBrightness, LINEARBLEND);
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  
+  pinMode(BOARD_LED_PIN, OUTPUT);
+  pinMode(MOTION_SENSOR_PIN, INPUT);
+  
+  Serial.println("====================================");
+  Serial.println("双灯环系统 - 动态色彩模式");
+  Serial.println("等待人体移动...");
+  Serial.println("====================================");
+  
+  // 初始化两个灯环
+  FastLED.addLeds<CHIPSET, MAIN_LED_PIN, COLOR_ORDER>(mainLeds, MAIN_NUM_LEDS);
+  FastLED.addLeds<CHIPSET, RING_LED_PIN, COLOR_ORDER>(ringLeds, RING_NUM_LEDS);
+  
+  FastLED.setBrightness(0);
+  FastLED.clear();
+  stableShow();
+  
+  // 设置随机种子
+  random16_set_seed(millis());
+  
+  // 初始化第一个色盘
+  currentPalette = palettes[0];
+}
+
+void loop() {
+  // 读取人体检测模块状态
+  currentMotionState = digitalRead(MOTION_SENSOR_PIN);
+  
+  // 检测到状态变化
+  if (currentMotionState != lastMotionState) {
+    lastMotionState = currentMotionState;
+    lastMotionTime = millis();
+    
+    if (currentMotionState) {
+      Serial.println("🚶 检测到人体移动！");
+      digitalWrite(BOARD_LED_PIN, HIGH);
+      
+      if (currentState == STATE_OFF || currentState == STATE_FADE_OUT) {
+        currentState = STATE_WAVE_IN;
+      }
+    } else {
+      Serial.println("💤 无人体移动");
+      digitalWrite(BOARD_LED_PIN, LOW);
+      
+      if (currentState == STATE_NORMAL) {
+        currentState = STATE_FADE_OUT;
+      }
+    }
+  }
+  
+  // 状态机处理
+  switch (currentState) {
+    case STATE_OFF:
+      break;
+      
+    case STATE_WAVE_IN:
+      if (waveIn()) {
+        currentState = STATE_NORMAL;
+        lastModeChange = millis();
+      }
+      break;
+      
+    case STATE_NORMAL:
+      {
+        unsigned long currentMillis = millis();
+        if (currentMillis - previousMillis >= UPDATE_INTERVAL) {
+          previousMillis = currentMillis;
+          
+          // 更新主灯效果
+          updateMainEffect();
+          
+          // 更新环形灯效果
+          updateRingEffect();
+          
+          stableShow();
+        }
+      }
+      break;
+      
+    case STATE_FADE_OUT:
+      if (fadeOut()) {
+        currentState = STATE_OFF;
+      }
+      break;
+  }
+  
+  // 如果检测到移动，定期输出状态
+  if (currentMotionState && currentState == STATE_NORMAL) {
+    unsigned long currentTime = millis();
+    if (currentTime - lastMotionTime > 15000) {
+      Serial.println("📍 人体仍在检测范围内");
+      lastMotionTime = currentTime;
+    }
+  }
+}

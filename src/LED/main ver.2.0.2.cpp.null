@@ -1,0 +1,102 @@
+#include <Arduino.h>
+#include "config.h"
+#include "LED_Controller.h"
+
+void setup() {
+  Serial.begin(115200);
+  
+  pinMode(BOARD_LED_PIN, OUTPUT);
+  pinMode(MOTION_SENSOR_PIN, INPUT);
+  
+  Serial.println("====================================");
+  Serial.println("双灯环系统启动 - WiFi控制版");
+  Serial.println("====================================");
+  
+  // 初始化LED
+  setupLEDs();
+  
+  // 连接WiFi
+  Serial.println("正在连接WiFi...");
+  Serial.print("SSID: ");
+  Serial.println(ssid);
+  
+  if (!WiFi.config(local_IP, gateway, subnet)) {
+    Serial.println("STA Failed to configure");
+  }
+  
+  WiFi.begin(ssid, password);
+  
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 30) {
+    delay(500);
+    Serial.print(".");
+    attempts++;
+    digitalWrite(BOARD_LED_PIN, !digitalRead(BOARD_LED_PIN));
+  }
+  
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nWiFi连接成功!");
+    Serial.print("IP地址: ");
+    Serial.println(WiFi.localIP());
+    digitalWrite(BOARD_LED_PIN, HIGH);
+    quickTestLeds();
+  } else {
+    Serial.println("\nWiFi连接失败，使用离线模式");
+    digitalWrite(BOARD_LED_PIN, LOW);
+    quickTestLeds();
+  }
+  
+  // 设置Web服务器
+  server.on("/", handleRoot);
+  server.on("/control", handleControl);
+  server.onNotFound(handleNotFound);
+  server.begin();
+  Serial.println("HTTP服务器已启动");
+  Serial.println("请用浏览器访问: http://" + WiFi.localIP().toString());
+}
+
+void loop() {
+  // 处理客户端请求
+  server.handleClient();
+  
+  // 传感器检测（自动模式）
+  if (currentState != STATE_MANUAL && currentState != STATE_OFF) {
+    currentMotionState = digitalRead(MOTION_SENSOR_PIN);
+    
+    if (currentMotionState != lastMotionState) {
+      lastMotionState = currentMotionState;
+      lastMotionTime = millis();
+      
+      if (currentMotionState) {
+        Serial.println("🚶 检测到人体移动！");
+        digitalWrite(BOARD_LED_PIN, HIGH);
+        
+        if (currentState == STATE_OFF || currentState == STATE_FADE_OUT) {
+          currentState = STATE_BREATHE;
+          breatheStep = 0;
+          startHue = 0;
+          ringHue = 0;
+        }
+      } else {
+        Serial.println("💤 无人体移动");
+        digitalWrite(BOARD_LED_PIN, LOW);
+        
+        if (currentState == STATE_NORMAL) {
+          currentState = STATE_FADE_OUT;
+        }
+      }
+    }
+  }
+  
+  // 更新LED状态
+  updateLEDs();
+  
+  // 状态输出
+  if (currentMotionState && currentState != STATE_MANUAL) {
+    unsigned long currentTime = millis();
+    if (currentTime - lastMotionTime > 5000) {
+      Serial.println("📍 人体仍在检测范围内");
+      lastMotionTime = currentTime;
+    }
+  }
+}

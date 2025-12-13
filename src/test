@@ -1,0 +1,60 @@
+#include <TFT_eSPI.h>
+TFT_eSPI tft = TFT_eSPI();
+
+void setup() {
+  Serial.begin(115200);
+  
+  // 硬件复位
+  pinMode(4, OUTPUT);
+  digitalWrite(4, LOW);
+  delay(50);
+  digitalWrite(4, HIGH);
+  delay(150);
+  
+  tft.init();
+  
+  // 校正显示窗口（重要！）
+  tft.setRotation(0);
+  
+  // 手动设置显示窗口，避开边缘花屏
+  setupDisplayWindow();
+  
+  Serial.println("显示窗口校正完成");
+}
+
+void setupDisplayWindow() {
+  // 设置显示窗口，避开边缘问题像素
+  int xOffset = 2;  // 左侧偏移
+  int yOffset = 1;  // 顶部偏移
+  int width = 80 - xOffset;
+  int height = 160 - yOffset;
+  
+  // 设置显示区域（跳过问题像素）
+  tft.setAddrWindow(xOffset, yOffset, width, height);
+  
+  // 测试显示区域
+  tft.fillScreen(TFT_BLACK);
+  tft.fillRect(xOffset, yOffset, width, height, TFT_BLUE);
+  
+  // 在安全区域显示文字
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(1);
+  tft.setCursor(xOffset + 5, yOffset + 5);
+  tft.print("校正区域");
+}
+
+void loop() {
+  // 在安全区域内动态显示
+  static uint32_t lastTime = 0;
+  if(millis() - lastTime > 1000) {
+    int xOffset = 2, yOffset = 1;
+    int width = 80 - xOffset, height = 160 - yOffset;
+    
+    // 只在安全区域更新
+    tft.fillRect(xOffset, yOffset + 40, width, 20, TFT_BLACK);
+    tft.setCursor(xOffset + 5, yOffset + 40);
+    tft.print("Time: " + String(millis()/1000));
+    
+    lastTime = millis();
+  }
+}
