@@ -144,7 +144,8 @@ void LEDController::setMode(const String &mode)
   else if (mode == "breathe")
   {
     lastState = currentState;
-    currentState = STATE_BREATHE_LOOP;
+    // currentState = STATE_BREATHE_LOOP;
+    currentState = STATE_BREATHE;
     breatheStep = 0;
   }
   else if (mode == "rainbow")
