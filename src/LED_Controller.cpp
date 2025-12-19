@@ -11,7 +11,7 @@ LEDController ledController;
 // 构造函数
 LEDController::LEDController()
     : server(Config::serverPort()),
-      currentState(STATE_OFF),
+      currentState(STATE_AUTO_NORMAL),
       previousMillis(0),
       breatheStep(0),
       startHue(0),
@@ -19,8 +19,8 @@ LEDController::LEDController()
       manualBlue(255),
       manualGreen(255),
       manualRed(255),
-      targetBrightness(80),
-      globalBrightness(80)
+      targetBrightness(255),
+      globalBrightness(255)
 {
 }
 
@@ -458,18 +458,21 @@ void LEDController::update()
       uint8_t mainBrightness;
       if (breatheStep < Config::MAIN_NUM_LEDS)
       {
-        mainBrightness = (uint16_t)breatheStep * 255 / Config::MAIN_NUM_LEDS;
+        mainBrightness = (uint16_t)(breatheStep) * 255 / Config::MAIN_NUM_LEDS;
       }
       else
       {
         mainBrightness = (uint16_t)(Config::BREATHE_STEPS - breatheStep) * 255 / Config::MAIN_NUM_LEDS;
+        // mainBrightness = 255;
       }
       mainLeds[mainPos] = CRGB(mainBrightness, mainBrightness, mainBrightness);
+      mainLeds[mainPos+1] = CRGB(mainBrightness, mainBrightness, mainBrightness);
 
       uint8_t ringPos = (breatheStep * Config::RING_NUM_LEDS) / Config::BREATHE_STEPS;
       ringPos = ringPos % Config::RING_NUM_LEDS;
       fill_solid(ringLeds, Config::RING_NUM_LEDS, CRGB::Black);
       ringLeds[ringPos] = CRGB(mainBrightness, mainBrightness, mainBrightness);
+      ringLeds[(ringPos+1)%Config::RING_NUM_LEDS] = CRGB(mainBrightness, mainBrightness, mainBrightness);
 
       stableShow();
       delay(Config::BREATHE_DURATION_MS / Config::BREATHE_STEPS);
