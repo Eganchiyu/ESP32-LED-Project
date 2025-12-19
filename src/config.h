@@ -31,9 +31,9 @@ public:
 
   // 动画参数
   static constexpr uint16_t BREATHE_STEPS = 120;
-  static constexpr uint16_t BREATHE_DURATION_MS = 750;
-  static constexpr uint16_t FADE_IN_MS = 1000;
-  static constexpr uint16_t FADE_OUT_MS = 1000;
+  static constexpr uint16_t BREATHE_DURATION_MS = 1000;
+  static constexpr uint16_t FADE_IN_MS = 800;
+  static constexpr uint16_t FADE_OUT_MS = 1500;
   static constexpr long NORMAL_UPDATE_INTERVAL = 30;
 };
 
