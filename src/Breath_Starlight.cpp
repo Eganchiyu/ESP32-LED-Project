@@ -7,16 +7,13 @@ BreathStarlight::BreathStarlight()
     : WARM_WHITE_HUE(30),
     WARM_WHITE_SATURATION(50),
     lastStarSpawn(0),
-    STAR_SPAWN_INTERVAL(800),
-    WAKE_UP_DURATION(2500),
+    STAR_SPAWN_INTERVAL(800), // 每800毫秒尝试生成一个新星
+    WAKE_UP_DURATION(3000),
     FADE_OUT_DURATION(2000),
-    TARGET_BRIGHTNESS(120)
+    TARGET_BRIGHTNESS(120),
+    UPDATE_INTERVAL(30), // 更快的更新，使动画更平滑
+    previousMillis(0)
 {   
-}
-
-// 稳定的暖白色调
-CRGB BreathStarlight::getWarmWhite() {
-  return CHSV(WARM_WHITE_HUE, WARM_WHITE_SATURATION, TARGET_BRIGHTNESS);
 }
 
 void BreathStarlight::begin(CRGB* main, CRGB* ring) {
@@ -25,14 +22,19 @@ void BreathStarlight::begin(CRGB* main, CRGB* ring) {
     initStarSystem();
 }
 
-// 初始化星光系统
+// 稳定的暖白色调->返回CRGB值
+CRGB BreathStarlight::getWarmWhite() {
+  return CHSV(WARM_WHITE_HUE, WARM_WHITE_SATURATION, TARGET_BRIGHTNESS);
+}
+
+// 初始化星光系统->将星光点活动性全部设成false
 void BreathStarlight::initStarSystem() {
   for (int i = 0; i < MAX_STARS; i++) {
     stars[i].active = false;
   }
 }
 
-// 获取活跃星光点数
+// 获取活跃星光点数->uint8_t
 uint8_t BreathStarlight::getActiveStarCount() {
   uint8_t count = 0;
   for (int i = 0; i < MAX_STARS; i++) {
@@ -41,7 +43,7 @@ uint8_t BreathStarlight::getActiveStarCount() {
   return count;
 }
 
-// 生成新的星光点
+// 生成新的星光点->包含位置判断和star结构体更新
 void BreathStarlight::spawnStar() {
   // 寻找空闲的星光槽位
   for (int i = 0; i < MAX_STARS; i++) {
@@ -91,7 +93,28 @@ void BreathStarlight::spawnStar() {
   }
 }
 
-// 更新星光点状态
+// 尝试生成新星->按时间带概率生成新星
+void BreathStarlight::trySpawnStar() {
+  unsigned long currentTime = millis();
+  
+  if (currentTime - lastStarSpawn > STAR_SPAWN_INTERVAL) {
+    lastStarSpawn = currentTime;
+    
+    uint8_t activeCount = getActiveStarCount();
+    
+    // 根据当前活跃星数决定生成概率
+    uint8_t spawnChance = 0;
+    if (activeCount < 3) spawnChance = 80;      // 星少时高概率生成
+    else if (activeCount < 5) spawnChance = 50; // 中等数量中等概率
+    else if (activeCount < 7) spawnChance = 20; // 星多时低概率
+    
+    if (random8(100) < spawnChance) {
+      spawnStar();
+    }
+  }
+}
+
+// 更新星光点状态->星点阶段演变
 void BreathStarlight::updateStars() {
   unsigned long currentTime = millis();
   
@@ -138,7 +161,7 @@ void BreathStarlight::updateStars() {
   }
 }
 
-// 渲染星光点到环形灯
+// 渲染星光点到环形灯->包含了渲染到灯环操作，不包括FastLED.show()
 void BreathStarlight::renderStars() {
   // 先清除环形灯
   fill_solid(ringLeds, Config::RING_NUM_LEDS, CRGB::Black);
@@ -149,29 +172,10 @@ void BreathStarlight::renderStars() {
       ringLeds[stars[i].position] = CHSV(stars[i].hue, stars[i].saturation, stars[i].brightness);
     }
   }
+  // stableShow();
 }
 
-// 尝试生成新星
-void BreathStarlight::trySpawnStar() {
-  unsigned long currentTime = millis();
-  
-  if (currentTime - lastStarSpawn > STAR_SPAWN_INTERVAL) {
-    lastStarSpawn = currentTime;
-    
-    uint8_t activeCount = getActiveStarCount();
-    
-    // 根据当前活跃星数决定生成概率
-    uint8_t spawnChance = 0;
-    if (activeCount < 3) spawnChance = 80;      // 星少时高概率生成
-    else if (activeCount < 5) spawnChance = 50; // 中等数量中等概率
-    else if (activeCount < 7) spawnChance = 20; // 星多时低概率
-    
-    if (random8(100) < spawnChance) {
-      spawnStar();
-    }
-  }
-}
-
+//FastLED.show()
 void BreathStarlight::stableShow()
 {
   delayMicroseconds(50);
@@ -208,21 +212,26 @@ bool BreathStarlight::fadeOut() {
 bool BreathStarlight::wakeUp() {
   static uint32_t startTime = 0;
   
+  // 初始化星光系统，清除灯光，填充黑色
   if (startTime == 0) {
     startTime = millis();
     fill_solid(mainLeds, Config::MAIN_NUM_LEDS, CRGB::Black);
     fill_solid(ringLeds, Config::RING_NUM_LEDS, CRGB::Black);
-    initStarSystem(); // 初始化星光系统
+    initStarSystem(); 
   }
   
+  //函数结束，返回true
   uint32_t elapsedTime = millis() - startTime;
   if (elapsedTime >= WAKE_UP_DURATION) {
     FastLED.setBrightness(TARGET_BRIGHTNESS);
     stableShow();
     startTime = 0;
+    lastStarSpawn = millis();
+    random16_set_seed(millis());
     return true;
   }
   
+  //按照设定时间线性渐亮（调高系统亮度到TARGET_BRIGHTNESS）
   uint8_t brightness = TARGET_BRIGHTNESS * elapsedTime / WAKE_UP_DURATION;
   FastLED.setBrightness(brightness);
   
@@ -245,36 +254,25 @@ bool BreathStarlight::wakeUp() {
   return false;
 }
 
-  
-// 设置随机种子
-random16_set_seed(millis());
-
-case STATE_WAKE_UP:
-    if (wakeUp()) {
-        currentState = STATE_NORMAL;
-        lastStarSpawn = millis(); // 开始生成星光
-    }
-break;
-
-
-
-case STATE_NORMAL:
-{
-    unsigned long currentMillis = millis();
+void BreathStarlight::STATE_normal(){
+  unsigned long currentMillis = millis();
     if (currentMillis - previousMillis >= UPDATE_INTERVAL) {
-        previousMillis = currentMillis;
+      
+      previousMillis = currentMillis;
 
-        // 主灯环 - 稳定暖白色
-        fill_solid(mainLeds, MAIN_NUM_LEDS, getWarmWhite());
+      // 主灯环 - 稳定暖白色
+      fill_solid(mainLeds, Config::MAIN_NUM_LEDS, getWarmWhite());
 
-        // 星光系统更新
-        trySpawnStar();  // 尝试生成新星
-        updateStars();   // 更新所有星光状态
-        renderStars();   // 渲染到环形灯
+      // 星光系统更新
+      trySpawnStar();  // 尝试生成新星
+      updateStars();   // 更新所有星光状态
+      renderStars();   // 渲染到环形灯
 
-        stableShow();
+      stableShow();
     }
 }
-break;
 
+/*
+下一步内容：
 
+*/

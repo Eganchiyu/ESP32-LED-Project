@@ -4,9 +4,9 @@
 class BreathStarlight {
 public:
     BreathStarlight();
-    void begin();
-    void update(uint32_t now);
-
+    void begin(CRGB* main, CRGB* ring);
+    void STATE_normal();
+    bool wakeUp();
 private:
 
     // 自然光参数
@@ -20,9 +20,9 @@ private:
     // 星光系统参数
     static const uint8_t MAX_STARS = 8; // 最大星光点数
     unsigned long lastStarSpawn;
+    unsigned long previousMillis;
+    const long UPDATE_INTERVAL;
     const long STAR_SPAWN_INTERVAL; // 每800毫秒尝试生成一个新星
-    // float basePhase;
-    // uint32_t lastSparkleTime;
 
     struct Star {
         int position;           // 在环形灯上的位置
@@ -39,17 +39,18 @@ private:
     };
 
     Star stars[MAX_STARS];
-    void begin();
     CRGB getWarmWhite();
     void initStarSystem();
     uint8_t getActiveStarCount();
     void spawnStar();
+    
     void updateStars();
     void renderStars();
     void trySpawnStar();
-    bool fadeOut();
-    bool wakeUp();
     void stableShow();
+    bool fadeOut();
+
+    
 };
 
 extern BreathStarlight breathStarlight;

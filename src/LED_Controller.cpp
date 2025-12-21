@@ -3,6 +3,7 @@
 // #include "motion_sensor.cpp"
 #include <ArduinoJson.h>
 #include <Arduino.h>
+#include <Breath_Starlight.h>
 
 // 初始化静态成员
 LEDController ledController;
@@ -446,6 +447,7 @@ void LEDController::update()
     }
     break;
 
+  
   case STATE_BREATHE:
   case STATE_AUTO_BREATH:
     if (breatheStep < Config::BREATHE_STEPS)
@@ -573,5 +575,20 @@ void LEDController::update()
 
   case STATE_MANUAL:
     break;
+  
+
+  case STATE_STARLIGHT_WAKEUP:
+  {
+    breathStarlight.begin(mainLeds, ringLeds);
+    if (breathStarlight.wakeUp()) {
+        lastState = currentState;
+        currentState = STATE_STARLIGHT_NORMAL;
+    }
+    break;
+  }
+  case STATE_STARLIGHT_NORMAL:
+  {
+    breathStarlight.STATE_normal();
+  }
   }
 }
