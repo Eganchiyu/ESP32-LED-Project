@@ -73,7 +73,7 @@ void BreathStarlight::spawnStar() {
       stars[i].hue = WARM_WHITE_HUE + random8(20) - 10; // 暖白色调附近轻微变化
       stars[i].saturation = 20 + random8(30); // 低饱和度，更接近白色
       stars[i].brightness = 0;
-      stars[i].targetBrightness = 100 + random8(55); // 200-255亮度
+      stars[i].targetBrightness = 100 + random8(155); // 100-255亮度
       stars[i].birthTime = millis();
       stars[i].lifeDuration = 3000 + random16(7000); // 3-10秒生命周期
       stars[i].fadeInDuration = 800 + random16(1200); // 0.8-2秒淡入
