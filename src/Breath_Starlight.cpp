@@ -10,8 +10,8 @@ BreathStarlight::BreathStarlight()
     STAR_SPAWN_INTERVAL(800), // 每800毫秒尝试生成一个新星
     WAKE_UP_DURATION(3000),
     FADE_OUT_DURATION(2000),
-    TARGET_BRIGHTNESS(120),
-    UPDATE_INTERVAL(30), // 更快的更新，使动画更平滑
+    TARGET_BRIGHTNESS(63),
+    UPDATE_INTERVAL(10), // 更快的更新，使动画更平滑
     previousMillis(0)
 {   
 }
@@ -73,7 +73,7 @@ void BreathStarlight::spawnStar() {
       stars[i].hue = WARM_WHITE_HUE + random8(20) - 10; // 暖白色调附近轻微变化
       stars[i].saturation = 20 + random8(30); // 低饱和度，更接近白色
       stars[i].brightness = 0;
-      stars[i].targetBrightness = 200 + random8(55); // 200-255亮度
+      stars[i].targetBrightness = 100 + random8(55); // 200-255亮度
       stars[i].birthTime = millis();
       stars[i].lifeDuration = 3000 + random16(7000); // 3-10秒生命周期
       stars[i].fadeInDuration = 800 + random16(1200); // 0.8-2秒淡入
@@ -104,9 +104,9 @@ void BreathStarlight::trySpawnStar() {
     
     // 根据当前活跃星数决定生成概率
     uint8_t spawnChance = 0;
-    if (activeCount < 3) spawnChance = 80;      // 星少时高概率生成
+    if (activeCount < 3) spawnChance = 60;      // 星少时高概率生成
     else if (activeCount < 5) spawnChance = 50; // 中等数量中等概率
-    else if (activeCount < 7) spawnChance = 20; // 星多时低概率
+    else if (activeCount < 7) spawnChance = 30; // 星多时低概率
     
     if (random8(100) < spawnChance) {
       spawnStar();
@@ -220,8 +220,9 @@ bool BreathStarlight::wakeUp() {
     initStarSystem(); 
   }
   
-  //函数结束，返回true
   uint32_t elapsedTime = millis() - startTime;
+
+  //函数结束，返回true
   if (elapsedTime >= WAKE_UP_DURATION) {
     FastLED.setBrightness(TARGET_BRIGHTNESS);
     stableShow();
@@ -250,7 +251,7 @@ bool BreathStarlight::wakeUp() {
   // 环形灯保持黑色，星光效果在NORMAL状态才开始
   fill_solid(ringLeds, Config::RING_NUM_LEDS, CRGB::Black);
   
-//   stableShow();
+  stableShow();
   return false;
 }
 
