@@ -171,6 +171,12 @@ void LEDController::setMode(const String &mode)
     //   currentState = STATE_BREATHE;
     //   breatheStep = 0;
   }
+  else if (mode == "starlight")
+  {
+    lastState = currentState;
+    currentState = STATE_STARLIGHT_WAKEUP;
+  }
+  
 }
 
 void LEDController::setState(SystemState NewState) {
@@ -298,12 +304,14 @@ void LEDController::handleRoot()
                 (currentState == STATE_OFF ? "关闭" : currentState == STATE_BREATHE ? "呼吸模式"
                                                   : currentState == STATE_NORMAL    ? "彩虹模式"
                                                   : currentState == STATE_MANUAL    ? "手动调色"
+                                                  : currentState == STATE_STARLIGHT_NORMAL ? "星光模式"
                                                                                     : "自动模式") +
                 R"rawliteral(</span></p>
     </div>
 
     <h3>模式选择</h3>
     <button class="btn btn-off" onclick="setMode('off')">关闭</button>
+    <button class="btn" onclick="setMode('starlight')">星光模式</button>
     <button class="btn" onclick="setMode('breathe')">呼吸模式</button>
     <button class="btn" onclick="setMode('rainbow')">彩虹模式</button>
     <button class="btn" onclick="setMode('manual')">手动调色</button>
@@ -403,6 +411,9 @@ void LEDController::handleControl()
   case STATE_MANUAL:
     statusText = "手动调色";
     break;
+  case STATE_STARLIGHT_NORMAL:
+    statusText = "星光模式";
+    break;
   default:
     statusText = "自动模式";
     break;
@@ -452,7 +463,7 @@ void LEDController::update()
   case STATE_AUTO_BREATH:
     if (breatheStep < Config::BREATHE_STEPS)
     {
-      Serial.println("in this loop once");
+      // Serial.println("in this loop once");
       FastLED.setBrightness(255);
       FastLED.clear();
 
